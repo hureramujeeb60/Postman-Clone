@@ -42,7 +42,6 @@ def serialize_collection(collection):
         # Include other fields as necessary
     }
 
-
 @router.get("/collections")
 async def get_all_collections(db: Session = Depends(get_db)):
     collections_list = db.query(collections).all()
@@ -50,6 +49,26 @@ async def get_all_collections(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No collections found")
     collections_data = [serialize_collection(c) for c in collections_list]
     return collections_data
+
+
+def serialize_requests(requests):
+    return {
+        "id": requests.id,
+        "url": requests.url,
+        "method": requests.method,
+        "body": requests.body,
+        "bodytype": requests.bodytype,
+        "collection_id": requests.collection_id
+        # Include other fields as necessary
+    }
+
+@router.get("/collections/{collection_id}/requests")
+async def get_requests_by_collection_id(collection_id: int, db: Session = Depends(get_db)):
+    requests_list = db.query(requests).filter(requests.c.collection_id == collection_id).all()
+    if not requests_list:
+        raise HTTPException(status_code=404, detail="No requests found for this collection ID")
+    request_data = [serialize_requests(c) for c in requests_list]
+    return request_data
 
 
 @router.get("/collections/{collection_id}")
@@ -103,3 +122,5 @@ async def update_collection(payload: UpdatePayload, db=Depends(get_db)):
     
     db.commit()  # Commit the transaction
     return {"message": "Collection updated successfully"}
+
+

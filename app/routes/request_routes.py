@@ -13,9 +13,7 @@ router = APIRouter()
 logging.basicConfig(level=logging.INFO)  # You can adjust the level as needed
 logger = logging.getLogger(__name__)
 
-@router.get("/send")
-async def send_request():
-    return {"message": "This is the send endpoint"}
+
 
 class RequestPayload(BaseModel):
     url: str
