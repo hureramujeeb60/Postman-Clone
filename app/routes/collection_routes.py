@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 import logging
+from typing import List
 from sqlalchemy import update
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -32,15 +33,31 @@ async def add_collection(payload: RequestPayload, db: Session = Depends(get_db))
     except Exception as e:
         logger.error(f"Error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}")
-    
 
-@router.get("/get_collection_id")
-async def get_collection_id(payload: RequestPayload, db: Session = Depends(get_db)):
-    collection = db.query(collections).filter_by(name = payload.name).first()
+
+def serialize_collection(collection):
+    return {
+        "id": collection.id,
+        "name": collection.name,
+        # Include other fields as necessary
+    }
+
+
+@router.get("/collections")
+async def get_all_collections(db: Session = Depends(get_db)):
+    collections_list = db.query(collections).all()
+    if not collections_list:
+        raise HTTPException(status_code=404, detail="No collections found")
+    collections_data = [serialize_collection(c) for c in collections_list]
+    return collections_data
+
+
+@router.get("/collections/{collection_id}")
+async def get_collection_by_id(collection_id: int, db: Session = Depends(get_db)):
+    collection = db.query(collections).filter_by(id=collection_id).first()
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
-    
-    return {"collection_id": collection.id}
+    return {"collection_id": collection.id, "name": collection.name, "status_code": 200}
 
 
 class DeletePayload(BaseModel):

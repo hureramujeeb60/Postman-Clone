@@ -8,13 +8,13 @@ from app.database import database
 
 router = APIRouter()
 
-class SaveResponseRequest(BaseModel):
+class SaveResponseRequest(BaseModel):   
     request_id: int
     body: str
     status_code: int
 
 
-@router.post("/save_response")
+@router.post("/responses")
 async def save_response(data: SaveResponseRequest, db: Session = Depends(get_db)):
     try: 
         new_response = response.insert().values(
@@ -34,7 +34,7 @@ class UpdateResponseRequest(BaseModel):
     status_code: int = None
     
 
-@router.put("/update_response/{response_id}")
+@router.put("/responses/{response_id}")
 async def update_response(response_id: int, data: UpdateResponseRequest, db=Depends(get_db)):
     update_values = {}
     
