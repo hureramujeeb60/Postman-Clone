@@ -1,6 +1,7 @@
 from sqlalchemy import Table, Column, Integer, String, ForeignKey, Enum
 from .database import metadata
 import enum
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 class BodyType(enum.Enum):
@@ -20,7 +21,7 @@ requests = Table(
     Column("id", Integer, primary_key=True),
     Column("url", String),
     Column("method", String),
-    Column("body", String),
+    Column("body", JSONB),
     Column("bodytype", Enum(BodyType)),
     Column("collection_id", Integer, ForeignKey("collections.id")),
 )
@@ -38,7 +39,7 @@ response = Table(
     "response",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("body", String),
+    Column("body", JSONB),
     Column("status_code", Integer),
     Column("request_id", Integer, ForeignKey("requests.id"))
 )

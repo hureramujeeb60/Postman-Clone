@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Path
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import params
-from sqlalchemy import update
+from sqlalchemy import update, delete, select  
 
 router = APIRouter()
 
@@ -26,6 +26,7 @@ async def add_param(payload: AddParamPayload, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to add parameter: {str(e)}")
+    
 
 class UpdateParamPayload(BaseModel):
     key: str = None
@@ -52,19 +53,38 @@ async def update_param(param_id: int, payload: UpdateParamPayload, db: Session =
     db.commit()
     return {"message": "Parameter updated successfully"}
 
-class DeleteParamPayload(BaseModel):
-    id: int
 
-@router.delete("/delete_param")
-async def delete_param(payload: DeleteParamPayload, db: Session = Depends(get_db)):
-    param = db.query(params).filter_by(id=payload.id).first()
+@router.delete("/delete_param/{param_id}")
+async def delete_param(param_id: int, db: Session = Depends(get_db)):
+    # Use SQLAlchemy `select` to check if the param exists
+    param = db.execute(select(params).where(params.c.id == param_id)).fetchone()
+    
     if not param:
         raise HTTPException(status_code=404, detail="Parameter not found")
     
     try:
-        db.delete(param)
+        # Delete the param using the `delete` statement
+        db.execute(delete(params).where(params.c.id == param_id))
         db.commit()
         return {"message": "Parameter deleted successfully"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete parameter: {str(e)}")
+
+
+@router.get("/get_params/{request_id}")
+async def get_params(request_id: int, db: Session = Depends(get_db)):
+    try:
+        # Query to get all parameters for the given request_id
+        query = select(params).where(params.c.request_id == request_id)
+        result = db.execute(query).fetchall()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="No parameters found for the given request_id")
+        
+        # Format the result as a list of dictionaries
+        params_list = [{"id": row.id, "key": row.key, "value": row.value} for row in result]
+        
+        return {"request_id": request_id, "params": params_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve parameters: {str(e)}")

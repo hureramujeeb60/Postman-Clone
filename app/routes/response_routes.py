@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Path
 from app.database import get_db
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -8,18 +8,19 @@ from app.database import database
 
 router = APIRouter()
 
-class SaveResponseRequest(BaseModel):   
+class SaveResponseRequest(BaseModel):
     request_id: int
-    body: str
+    body: dict  # Change from str to dict for JSON
     status_code: int
 
 
 @router.post("/responses")
 async def save_response(data: SaveResponseRequest, db: Session = Depends(get_db)):
-    try: 
+    try:
+        # Save the response body as a JSONB object
         new_response = response.insert().values(
             request_id=data.request_id,
-            body=data.body,
+            body=data.body,  # Will now be stored as JSON
             status_code=data.status_code
         )
         db.execute(new_response)
@@ -30,16 +31,16 @@ async def save_response(data: SaveResponseRequest, db: Session = Depends(get_db)
     
 
 class UpdateResponseRequest(BaseModel):
-    body: str = None
+    body: dict = None  # Change from str to dict for JSON
     status_code: int = None
-    
+
 
 @router.put("/responses/{response_id}")
 async def update_response(response_id: int, data: UpdateResponseRequest, db=Depends(get_db)):
     update_values = {}
     
     if data.body is not None:
-        update_values['body'] = data.body
+        update_values['body'] = data.body  # Store the body as JSON
     if data.status_code is not None:
         update_values['status_code'] = data.status_code
     
@@ -55,3 +56,17 @@ async def update_response(response_id: int, data: UpdateResponseRequest, db=Depe
     db.commit()  # Commit the transaction
 
     return {"message": "Response updated successfully"}
+
+
+@router.delete("/responses/{response_id}")
+async def delete_response(response_id: int, db: Session = Depends(get_db)):
+    # Check if the response exists before deleting
+    query = response.delete().where(response.c.id == response_id)
+    result = db.execute(query)
+    
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Response not found")
+    
+    db.commit()  # Commit the transaction
+    
+    return {"message": "Response deleted successfully"}

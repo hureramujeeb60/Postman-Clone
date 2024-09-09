@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Path
 import logging
 from typing import List
 from sqlalchemy import update
@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database import get_db
-from app.models import collections, requests
+from app.models import collections, requests, params, response
 
 router = APIRouter()
 
@@ -79,48 +79,62 @@ async def get_collection_by_id(collection_id: int, db: Session = Depends(get_db)
     return {"collection_id": collection.id, "name": collection.name, "status_code": 200}
 
 
-class DeletePayload(BaseModel):
-    id: int
 
-
-@router.delete("/delete_collection")
-async def delete_collection(payload: DeletePayload, db: Session = Depends(get_db)):
-    # Use SQLAlchemy `select` statement to verify if the collection exists
-    collection = db.execute(select(collections).filter_by(id=payload.id)).fetchone()
+@router.delete("/delete_collection/{collection_id}")
+async def delete_collection(collection_id: int, db: Session = Depends(get_db)):
+    # Verify if the collection exists
+    collection = db.execute(select(collections).filter_by(id=collection_id)).fetchone()
     
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
     try:
-        # Delete associated requests first
-        db.execute(delete(requests).where(requests.c.collection_id == payload.id))
+        # Retrieve the IDs of all requests associated with the collection
+        request_ids = db.execute(select(requests.c.id).where(requests.c.collection_id == collection_id)).scalars().all()
         
-        # Then delete the collection itself
-        db.execute(delete(collections).where(collections.c.id == payload.id))
-        
+        if request_ids:
+            # Delete associated responses
+            db.execute(delete(response).where(response.c.request_id.in_(request_ids)))
+            # Delete associated params
+            db.execute(delete(params).where(params.c.request_id.in_(request_ids)))
+            # Delete associated requests
+            db.execute(delete(requests).where(requests.c.collection_id == collection_id))
+
+        # Finally, delete the collection itself
+        db.execute(delete(collections).where(collections.c.id == collection_id))
+
         db.commit()
-        return {"message": "Collection and associated requests deleted successfully"}
+        return {"message": "Collection and all associated data (requests, responses, params) deleted successfully"}
     except Exception as e:
-        logger.error(f"Error occurred: {e}")
+        logger.error(f"Error occurred during deletion: {e}")
         db.rollback()  # Rollback the transaction in case of error
         raise HTTPException(status_code=500, detail=f"Deletion failed: {str(e)}")
 
 
+
 class UpdatePayload(BaseModel):
-    id: int
     new_name: str
 
-@router.patch("/update_collection")
-async def update_collection(payload: UpdatePayload, db=Depends(get_db)):
-
-    stmt = update(collections).where(collections.c.id == payload.id).values(name=payload.new_name)
+@router.patch("/update_collection/{collection_id}")
+async def update_collection(
+    collection_id: int, 
+    payload: UpdatePayload, 
+    db: Session = Depends(get_db)
+):
+    try:
+        # Update the collection name where collection ID matches
+        stmt = update(collections).where(collections.c.id == collection_id).values(name=payload.new_name)
+        
+        # Execute the update statement
+        result = db.execute(stmt)
+        
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        
+        db.commit()  # Commit the transaction
+        return {"message": "Collection updated successfully"}
     
-    result = db.execute(stmt)
-    
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Collection not found")
-    
-    db.commit()  # Commit the transaction
-    return {"message": "Collection updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating collection: {str(e)}")
 
 
