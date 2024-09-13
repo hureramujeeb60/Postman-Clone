@@ -21,13 +21,13 @@ app.include_router(collection_routes.router, prefix="/api")
 app.include_router(response_routes.router, prefix="/api")
 app.include_router(param_routes.router, prefix="/api")
 
-@app.on_event("startup")
 async def startup():
-    metadata.create_all(bind=engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
 
 @app.on_event("shutdown")
 async def shutdown():
-    engine.dispose()
+    await engine.dispose()
 
 
 @app.get("/")

@@ -1,90 +1,89 @@
-from fastapi import APIRouter, HTTPException, Depends, Path
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import params
-from sqlalchemy import update, delete, select  
+from sqlalchemy import update, delete, select
+from app.utils.utils import check_request_exists, check_param_exists, handle_server_error, logger
+from app.schemas.params_schema import AddParamPayload, UpdateParamPayload
 
 router = APIRouter()
 
-class AddParamPayload(BaseModel):
-    key: str
-    value: str
-    request_id: int
-
 @router.post("/add_param")
-async def add_param(payload: AddParamPayload, db: Session = Depends(get_db)):
+async def add_param(payload: AddParamPayload, db: AsyncSession = Depends(get_db)):
     try:
+        await check_request_exists(db, payload.request_id)
+
         new_param = params.insert().values(
             key=payload.key,
             value=payload.value,
             request_id=payload.request_id
         )
-        db.execute(new_param)
-        db.commit()
+        await db.execute(new_param)
+        await db.commit()
+
+        logger.info(f"Parameter added successfully to request {payload.request_id}")
         return {"message": "Parameter added successfully"}
     except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to add parameter: {str(e)}")
-    
-
-class UpdateParamPayload(BaseModel):
-    key: str = None
-    value: str = None
+        await db.rollback()
+        handle_server_error(e)
 
 @router.put("/update_param/{param_id}")
-async def update_param(param_id: int, payload: UpdateParamPayload, db: Session = Depends(get_db)):
-    update_values = {}
-    
-    if payload.key is not None:
-        update_values['key'] = payload.key
-    if payload.value is not None:
-        update_values['value'] = payload.value
-    
-    if not update_values:
-        raise HTTPException(status_code=400, detail="No values provided for update")
+async def update_param(param_id: int, payload: UpdateParamPayload, db: AsyncSession = Depends(get_db)):
+    try:
+        await check_param_exists(db, param_id)
 
-    query = update(params).where(params.c.id == param_id).values(update_values)
-    result = db.execute(query)
-    
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Parameter not found")
-    
-    db.commit()
-    return {"message": "Parameter updated successfully"}
+        update_values = {}
+        if payload.key is not None:
+            update_values['key'] = payload.key
+        if payload.value is not None:
+            update_values['value'] = payload.value
 
+        if not update_values:
+            raise HTTPException(status_code=400, detail="No values provided for update")
+
+        query = update(params).where(params.c.id == param_id).values(update_values)
+        await db.execute(query)
+        await db.commit()
+
+        logger.info(f"Parameter with ID {param_id} updated successfully")
+        return {"message": "Parameter updated successfully"}
+    except Exception as e:
+        await db.rollback()
+        handle_server_error(e)
 
 @router.delete("/delete_param/{param_id}")
-async def delete_param(param_id: int, db: Session = Depends(get_db)):
-    # Use SQLAlchemy `select` to check if the param exists
-    param = db.execute(select(params).where(params.c.id == param_id)).fetchone()
-    
-    if not param:
-        raise HTTPException(status_code=404, detail="Parameter not found")
-    
+async def delete_param(param_id: int, db: AsyncSession = Depends(get_db)):
     try:
-        # Delete the param using the `delete` statement
-        db.execute(delete(params).where(params.c.id == param_id))
-        db.commit()
+        await check_param_exists(db, param_id)
+
+        query = delete(params).where(params.c.id == param_id)
+        await db.execute(query)
+        await db.commit()
+
+        logger.info(f"Parameter with ID {param_id} deleted successfully")
         return {"message": "Parameter deleted successfully"}
     except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete parameter: {str(e)}")
+        await db.rollback()
+        handle_server_error(e)
 
 
 @router.get("/get_params/{request_id}")
-async def get_params(request_id: int, db: Session = Depends(get_db)):
+async def get_params(request_id: int, db: AsyncSession = Depends(get_db)):
     try:
-        # Query to get all parameters for the given request_id
+        await check_request_exists(db, request_id)
+
         query = select(params).where(params.c.request_id == request_id)
-        result = db.execute(query).fetchall()
-        
-        if not result:
+        result = await db.execute(query)
+        rows = result.fetchall()
+
+        if not rows:
             raise HTTPException(status_code=404, detail="No parameters found for the given request_id")
-        
-        # Format the result as a list of dictionaries
-        params_list = [{"id": row.id, "key": row.key, "value": row.value} for row in result]
-        
+
+        params_list = [{"id": row.id, "key": row.key, "value": row.value} for row in rows]
+
+        logger.info(f"Retrieved parameters for request {request_id}")
         return {"request_id": request_id, "params": params_list}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve parameters: {str(e)}")
+        handle_server_error(e)
+

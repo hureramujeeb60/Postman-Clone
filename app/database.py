@@ -1,22 +1,27 @@
-from sqlalchemy import create_engine, MetaData
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import MetaData
 
-DATABASE_URL = "postgresql://postgres:hurera12@localhost/Task1"
 
-database = create_engine(DATABASE_URL)
+
+database = "postgresql+asyncpg://postgres:hurera12@localhost/Task1"
+
+engine = create_async_engine(database, echo=True)
 metadata = MetaData()
 
-engine = create_engine(
-    DATABASE_URL
+SessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    autocommit=False,
+    autoflush=False,
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
+async def get_db():
+    async with SessionLocal() as session:
+        yield session
+        await session.commit()
